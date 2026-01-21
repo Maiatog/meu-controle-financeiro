@@ -57,7 +57,7 @@ def adicionar_item(data, tipo, categoria, descricao, valor):
     nova_linha = pd.DataFrame({
         'Data': [pd.to_datetime(data).date()],
         'Tipo': [tipo],
-        'Categoria': [categoria],
+        'Categoria': [categoria.strip().title()],
         'Descrição': [descricao.strip().title()],
         'Valor': [float(valor)]
     })
@@ -66,34 +66,64 @@ def adicionar_item(data, tipo, categoria, descricao, valor):
 # --- BARRA LATERAL ---
 st.sidebar.title("💰 Gerenciador")
 
-# 1. TIPO FORA DO FORMULÁRIO (Para atualizar as categorias instantaneamente)
-st.sidebar.write("### Passo 1: Escolha o Tipo")
-tipo_sel = st.sidebar.selectbox("Tipo de Lançamento", ["Despesa", "Receita"])
+# SEÇÃO DE IMPORTAÇÃO
+st.sidebar.write("### 📂 Importar Planilha")
+arquivo_upload = st.sidebar.file_uploader("Carregar arquivo .xlsx", type=["xlsx"])
 
-# Definir categorias baseadas no tipo selecionado - ADICIONADO CARTÃO DE CRÉDITO
+if arquivo_upload is not None:
+    if st.sidebar.button("Confirmar Importação"):
+        try:
+            df_importado = pd.read_excel(arquivo_upload)
+            # Garantir que as colunas batem com o esperado
+            colunas_esperadas = ['Data', 'Tipo', 'Categoria', 'Descrição', 'Valor']
+            if all(col in df_importado.columns for col in colunas_esperadas):
+                # Converter coluna Data para datetime e depois apenas data
+                df_importado['Data'] = pd.to_datetime(df_importado['Data']).dt.date
+                st.session_state['data'] = pd.concat([st.session_state['data'], df_importado], ignore_index=True)
+                st.sidebar.success("Dados importados com sucesso!")
+                st.rerun()
+            else:
+                st.sidebar.error("A planilha deve conter as colunas: Data, Tipo, Categoria, Descrição e Valor")
+        except Exception as e:
+            st.sidebar.error(f"Erro ao ler o arquivo: {e}")
+
+st.sidebar.markdown("---")
+
+# FORMULÁRIO DE LANÇAMENTO
+st.sidebar.write("### 📝 Novo Registro")
+tipo_sel = st.sidebar.selectbox("Tipo", ["Despesa", "Receita"])
+
+# Definir opções de categoria base
 if tipo_sel == "Despesa":
-    cat_opcoes = ["Moradia", "Alimentação", "Transporte", "Lazer", "Saúde", "Educação", "Assinaturas", "Cartão de Crédito", "Outros"]
+    cat_base = ["Moradia", "Alimentação", "Transporte", "Lazer", "Saúde", "Educação", "Assinaturas", "Cartão de Crédito"]
 else:
-    cat_opcoes = ["Salário", "Investimentos", "Vendas", "Freelance", "Outros"]
+    cat_base = ["Salário", "Investimentos", "Vendas", "Freelance"]
 
-# 2. RESTANTE DOS DADOS DENTRO DO FORMULÁRIO
+cat_opcoes = cat_base + ["Outra (Digitar nova...)"]
+
 with st.sidebar.form("form_registro", clear_on_submit=True):
-    st.write("### Passo 2: Detalhes")
     data_sel = st.date_input("Data", date.today())
-    categoria_sel = st.selectbox("Categoria", cat_opcoes)
+    categoria_pre = st.selectbox("Categoria", cat_opcoes)
+    
+    # Campo extra que aparece apenas se "Outra" for selecionada
+    categoria_custom = st.text_input("Se escolheu 'Outra', digite o nome aqui:")
+    
     desc_sel = st.text_input("Descrição")
     valor_sel = st.number_input("Valor (R$)", min_value=0.01, format="%.2f")
     
     btn_enviar = st.form_submit_button("Lançar Agora")
     
     if btn_enviar:
-        if desc_sel:
-            adicionar_item(data_sel, tipo_sel, categoria_sel, desc_sel, valor_sel)
-            st.sidebar.success(f"{tipo_sel} adicionada!")
-            # Força o app a recarregar para atualizar o gráfico imediatamente
-            st.rerun()
+        # Lógica para definir qual categoria usar
+        categoria_final = categoria_custom if categoria_pre == "Outra (Digitar nova...)" else categoria_pre
+        
+        if not categoria_final:
+            st.error("Por favor, defina uma categoria.")
+        elif not desc_sel:
+            st.error("Por favor, preencha a descrição.")
         else:
-            st.sidebar.error("Por favor, preencha a descrição.")
+            adicionar_item(data_sel, tipo_sel, categoria_final, desc_sel, valor_sel)
+            st.rerun()
 
 st.sidebar.markdown("---")
 if st.sidebar.button("Limpar Todos os Dados"):
@@ -106,20 +136,19 @@ st.title("Painel de Controle Financeiro")
 df = st.session_state['data']
 
 if not df.empty:
-    # Cálculo das métricas
+    # Métricas
     receitas = df[df['Tipo'] == 'Receita']['Valor'].sum()
     despesas = df[df['Tipo'] == 'Despesa']['Valor'].sum()
     saldo = receitas - despesas
     
-    # Exibição dos Cards
     st.markdown(f"""
     <div class="metric-container">
         <div class="metric-card">
-            <div class="metric-label">TOTAL RECEITAS (ENTRADAS)</div>
+            <div class="metric-label">TOTAL RECEITAS</div>
             <div class="metric-value" style="color: #28a745;">R$ {receitas:,.2f}</div>
         </div>
         <div class="metric-card">
-            <div class="metric-label">TOTAL DESPESAS (SAÍDAS)</div>
+            <div class="metric-label">TOTAL DESPESAS</div>
             <div class="metric-value" style="color: #dc3545;">R$ {despesas:,.2f}</div>
         </div>
         <div class="metric-card">
@@ -132,11 +161,10 @@ if not df.empty:
     col_graf, col_tab = st.columns([1, 1.2])
 
     with col_graf:
-        st.subheader("Onde você está gastando?")
+        st.subheader("Distribuição por Categoria (%)")
         df_despesas = df[df['Tipo'] == 'Despesa']
         
         if not df_despesas.empty:
-            # AGRUPAMENTO: Soma os valores por categoria para garantir cores diferentes no gráfico
             df_grafico = df_despesas.groupby("Categoria")["Valor"].sum().reset_index()
             
             fig = px.pie(
@@ -144,31 +172,27 @@ if not df.empty:
                 values='Valor', 
                 names='Categoria', 
                 hole=0.5,
-                color='Categoria', # Garante que cada categoria tenha sua cor
+                color='Categoria',
                 color_discrete_sequence=px.colors.qualitative.Bold
             )
-            fig.update_layout(
-                margin=dict(t=30, b=0, l=0, r=0),
-                legend=dict(orientation="h", yanchor="bottom", y=-0.2)
-            )
+            # Adiciona as porcentagens dentro do gráfico
+            fig.update_traces(textposition='inside', textinfo='percent+label')
+            fig.update_layout(margin=dict(t=30, b=0, l=0, r=0))
             st.plotly_chart(fig, use_container_width=True)
         else:
-            st.info("Ainda não há despesas cadastradas para gerar o gráfico.")
+            st.info("Cadastre despesas para visualizar o gráfico percentual.")
 
     with col_tab:
-        st.subheader("Histórico de Registros")
-        # Exibe a tabela ordenada pela data mais recente
+        st.subheader("Registros Atuais")
         df_display = df.sort_values(by='Data', ascending=False)
         st.dataframe(df_display, use_container_width=True, hide_index=True)
         
-        # Botão para baixar Excel
         excel_file = converter_para_excel(df)
         st.download_button(
-            label="📥 Baixar Planilha (.xlsx)",
+            label="📥 Baixar Planilha Atualizada (.xlsx)",
             data=excel_file,
-            file_name=f"meu_financeiro_{date.today()}.xlsx",
+            file_name=f"financeiro_atualizado_{date.today()}.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         )
 else:
-    st.info("👋 Olá! Use a barra lateral para inserir seu primeiro ganho ou gasto. Os gráficos e resumos aparecerão aqui assim que você começar!")
-    st.image("https://img.freepik.com/free-vector/saving-money-concept-illustration_114360-3183.jpg", width=500)
+    st.info("Arraste uma planilha para a barra lateral ou comece a digitar seus gastos!")
