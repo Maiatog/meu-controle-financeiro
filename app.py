@@ -5,137 +5,181 @@ from io import BytesIO
 from datetime import date
 
 # --- CONFIGURAÇÃO DA PÁGINA ---
-st.set_page_config(page_title="Controle Financeiro Pessoal", layout="wide", page_icon="💰")
+st.set_page_config(
+    page_title="Finanças Pro - Controle Pessoal",
+    layout="wide",
+    page_icon="💰"
+)
 
-# --- CSS PERSONALIZADO (Para deixar bonito) ---
+# --- CSS PERSONALIZADO ---
 st.markdown("""
 <style>
-    .metric-card {
-        background-color: #f0f2f6;
-        border-radius: 10px;
-        padding: 20px;
-        text-align: center;
-        box-shadow: 2px 2px 5px rgba(0,0,0,0.1);
+    /* Estilização dos Cards de Métrica */
+    .metric-container {
+        display: flex;
+        justify-content: space-between;
+        gap: 10px;
+        margin-bottom: 20px;
     }
-    .metric-value {
-        font-size: 24px;
-        font-weight: bold;
-        color: #333;
+    .metric-card {
+        background-color: #ffffff;
+        border: 1px solid #e6e9ef;
+        border-radius: 12px;
+        padding: 20px;
+        flex: 1;
+        text-align: center;
+        box-shadow: 0 4px 6px rgba(0,0,0,0.05);
     }
     .metric-label {
+        color: #5f6368;
         font-size: 14px;
-        color: #666;
+        font-weight: 600;
+        margin-bottom: 8px;
     }
-    /* Corrigir espaçamento do topo */
-    .block-container {
-        padding-top: 2rem;
+    .metric-value {
+        font-size: 26px;
+        font-weight: 700;
+    }
+    /* Estilo do botão de download */
+    .stDownloadButton button {
+        width: 100%;
+        background-color: #007bff;
+        color: white;
+        border-radius: 8px;
     }
 </style>
 """, unsafe_allow_html=True)
 
-# --- FUNÇÕES ---
-
-# Inicializar o Session State (Memória temporária do navegador)
+# --- INICIALIZAÇÃO DOS DADOS (SESSION STATE) ---
 if 'data' not in st.session_state:
+    # Criando um DataFrame vazio com as colunas necessárias
     st.session_state['data'] = pd.DataFrame(columns=['Data', 'Tipo', 'Categoria', 'Descrição', 'Valor'])
 
-def adicionar_transacao(data, tipo, categoria, descricao, valor):
+# --- FUNÇÕES AUXILIARES ---
+
+def converter_para_excel(df):
+    """Converte o DataFrame para um arquivo Excel em memória."""
+    output = BytesIO()
+    with pd.ExcelWriter(output, engine='openpyxl') as writer:
+        df.to_excel(writer, index=False, sheet_name='Meus Lancamentos')
+    return output.getvalue()
+
+def adicionar_item(data, tipo, categoria, descricao, valor):
+    """Adiciona uma nova linha ao DataFrame no Session State."""
     nova_linha = pd.DataFrame({
-        'Data': [data],
+        'Data': [pd.to_datetime(data).date()],
         'Tipo': [tipo],
         'Categoria': [categoria],
-        'Descrição': [descricao],
-        'Valor': [valor]
+        'Descrição': [descricao.strip().title()], # Padroniza texto
+        'Valor': [float(valor)]
     })
     st.session_state['data'] = pd.concat([st.session_state['data'], nova_linha], ignore_index=True)
 
-def converter_para_excel(df):
-    output = BytesIO()
-    with pd.ExcelWriter(output, engine='openpyxl') as writer:
-        df.to_excel(writer, index=False, sheet_name='Lançamentos')
-    processed_data = output.getvalue()
-    return processed_data
+# --- BARRA LATERAL (INPUT) ---
+st.sidebar.image("https://cdn-icons-png.flaticon.com/512/1611/1611154.png", width=80)
+st.sidebar.title("Gerenciador")
 
-# --- BARRA LATERAL (ENTRADA DE DADOS) ---
-st.sidebar.header("📝 Novo Lançamento")
-
-with st.sidebar.form("form_financeiro", clear_on_submit=True):
-    data_input = st.date_input("Data", date.today())
-    tipo_input = st.selectbox("Tipo", ["Despesa", "Receita"])
-    cat_opcoes = ["Moradia", "Alimentação", "Transporte", "Lazer", "Saúde", "Educação", "Investimentos", "Salário", "Outros"]
-    categoria_input = st.selectbox("Categoria", cat_opcoes)
-    desc_input = st.text_input("Descrição (Ex: Aluguel)")
-    valor_input = st.number_input("Valor (R$)", min_value=0.0, format="%.2f")
+with st.sidebar.form("form_registro", clear_on_submit=True):
+    st.write("### Novo Registro")
+    data_sel = st.date_input("Data", date.today())
+    tipo_sel = st.selectbox("Tipo", ["Despesa", "Receita"])
     
-    submitted = st.form_submit_button("Adicionar")
-    if submitted:
-        adicionar_transacao(data_input, tipo_input, categoria_input, desc_input, valor_input)
-        st.success("Lançamento adicionado!")
+    # Categorias inteligentes baseadas no tipo
+    if tipo_sel == "Despesa":
+        cat_opcoes = ["Moradia", "Alimentação", "Transporte", "Lazer", "Saúde", "Educação", "Assinaturas", "Outros"]
+    else:
+        cat_opcoes = ["Salário", "Investimentos", "Vendas", "Freelance", "Outros"]
+        
+    categoria_sel = st.selectbox("Categoria", cat_opcoes)
+    desc_sel = st.text_input("Descrição (Ex: Aluguel)")
+    valor_sel = st.number_input("Valor (R$)", min_value=0.01, format="%.2f")
+    
+    btn_add = st.form_submit_button("Lançar Agora")
+    
+    if btn_add:
+        if desc_sel == "":
+            st.sidebar.error("Por favor, preencha a descrição.")
+        else:
+            adicionar_item(data_sel, tipo_sel, categoria_sel, desc_sel, valor_sel)
+            st.sidebar.success("Adicionado com sucesso!")
+
+# Botão de reset na sidebar (fora do form)
+if st.sidebar.button("Limpar Tudo (Reset)"):
+    st.session_state['data'] = pd.DataFrame(columns=['Data', 'Tipo', 'Categoria', 'Descrição', 'Valor'])
+    st.rerun()
 
 # --- ÁREA PRINCIPAL ---
-st.title("📊 Painel de Controle Financeiro")
+st.title("💰 Meu Controle Financeiro")
 
 df = st.session_state['data']
 
 if not df.empty:
     # --- CÁLCULOS ---
-    total_receitas = df[df['Tipo'] == 'Receita']['Valor'].sum()
-    total_despesas = df[df['Tipo'] == 'Despesa']['Valor'].sum()
-    saldo = total_receitas - total_despesas
+    receitas = df[df['Tipo'] == 'Receita']['Valor'].sum()
+    despesas = df[df['Tipo'] == 'Despesa']['Valor'].sum()
+    saldo = receitas - despesas
     
-    # --- EXIBIÇÃO DE CARDS (HTML/CSS INJETADO) ---
-    col1, col2, col3 = st.columns(3)
-    
-    col1.markdown(f"""
-    <div class="metric-card">
-        <div class="metric-label">Entradas</div>
-        <div class="metric-value" style="color: green;">R$ {total_receitas:,.2f}</div>
-    </div>
-    """, unsafe_allow_html=True)
-    
-    col2.markdown(f"""
-    <div class="metric-card">
-        <div class="metric-label">Saídas</div>
-        <div class="metric-value" style="color: red;">R$ {total_despesas:,.2f}</div>
-    </div>
-    """, unsafe_allow_html=True)
-    
-    col3.markdown(f"""
-    <div class="metric-card">
-        <div class="metric-label">Saldo Atual</div>
-        <div class="metric-value" style="color: {'blue' if saldo >= 0 else 'red'};">R$ {saldo:,.2f}</div>
+    # --- EXIBIÇÃO DOS CARDS ---
+    st.markdown(f"""
+    <div class="metric-container">
+        <div class="metric-card">
+            <div class="metric-label">ENTRADAS</div>
+            <div class="metric-value" style="color: #28a745;">R$ {receitas:,.2f}</div>
+        </div>
+        <div class="metric-card">
+            <div class="metric-label">SAÍDAS</div>
+            <div class="metric-value" style="color: #dc3545;">R$ {despesas:,.2f}</div>
+        </div>
+        <div class="metric-card">
+            <div class="metric-label">SALDO ATUAL</div>
+            <div class="metric-value" style="color: {'#007bff' if saldo >= 0 else '#dc3545'};">R$ {saldo:,.2f}</div>
+        </div>
     </div>
     """, unsafe_allow_html=True)
 
-    st.markdown("---")
+    col_graf, col_tab = st.columns([1, 1.2])
 
-    # --- GRÁFICOS E TABELA ---
-    c1, c2 = st.columns([2, 3])
-
-    with c1:
-        st.subheader("Onde o dinheiro está indo?")
-        # Filtrar apenas despesas para o gráfico
+    with col_graf:
+        st.subheader("Distribuição de Gastos")
         df_despesas = df[df['Tipo'] == 'Despesa']
         
         if not df_despesas.empty:
-            fig = px.donut(df_despesas, values='Valor', names='Categoria', hole=0.4, color_discrete_sequence=px.colors.qualitative.Pastel)
-            fig.update_layout(showlegend=True, margin=dict(t=0, b=0, l=0, r=0))
+                fig = px.pie(
+                df_despesas, 
+                values='Valor', 
+                names='Categoria', 
+                hole=0.5,
+                color_discrete_sequence=px.colors.qualitative.Safe
+            )
+            fig.update_layout(
+                margin=dict(t=30, b=0, l=0, r=0),
+                legend=dict(orientation="h", yanchor="bottom", y=-0.2, xanchor="center", x=0.5)
+            )
             st.plotly_chart(fig, use_container_width=True)
         else:
-            st.info("Cadastre despesas para ver o gráfico.")
+            st.info("Nenhuma despesa para exibir no gráfico.")
 
-    with c2:
-        st.subheader("Histórico de Lançamentos")
-        st.dataframe(df, use_container_width=True, hide_index=True)
+    with col_tab:
+        st.subheader("Registros Recentes")
+        # Mostrar tabela formatada
+        st.dataframe(
+            df.sort_values(by='Data', ascending=False), 
+            use_container_width=True, 
+            hide_index=True
+        )
         
-        # --- BOTÃO DE DOWNLOAD EXCEL ---
-        excel_data = converter_para_excel(df)
+        # Botão de Download
+        excel_file = converter_para_excel(df)
         st.download_button(
-            label="📥 Baixar Planilha Excel (.xlsx)",
-            data=excel_data,
-            file_name='meu_controle_financeiro.xlsx',
-            mime='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+            label="📊 Baixar Planilha Excel Atualizada",
+            data=excel_file,
+            file_name=f"financeiro_{date.today()}.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         )
 
 else:
-    st.info("👈 Comece adicionando seus ganhos e gastos na barra lateral!")
+    # Mensagem caso a planilha esteja vazia
+    st.info("### Bem-vindo! \n\nPara começar, utilize o formulário na **barra lateral esquerda** para inserir suas receitas ou despesas. Assim que você inserir o primeiro dado, o painel e os gráficos aparecerão aqui automaticamente.")
+    
+    # Ilustração de placeholder
+    st.image("https://img.freepik.com/free-vector/personal-finance-concept-illustration_114360-5125.jpg", width=400)
