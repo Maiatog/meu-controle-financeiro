@@ -70,9 +70,9 @@ st.sidebar.title("💰 Gerenciador")
 st.sidebar.write("### Passo 1: Escolha o Tipo")
 tipo_sel = st.sidebar.selectbox("Tipo de Lançamento", ["Despesa", "Receita"])
 
-# Definir categorias baseadas no tipo selecionado
+# Definir categorias baseadas no tipo selecionado - ADICIONADO CARTÃO DE CRÉDITO
 if tipo_sel == "Despesa":
-    cat_opcoes = ["Moradia", "Alimentação", "Transporte", "Lazer", "Saúde", "Educação", "Assinaturas", "Outros"]
+    cat_opcoes = ["Moradia", "Alimentação", "Transporte", "Lazer", "Saúde", "Educação", "Assinaturas", "Cartão de Crédito", "Outros"]
 else:
     cat_opcoes = ["Salário", "Investimentos", "Vendas", "Freelance", "Outros"]
 
